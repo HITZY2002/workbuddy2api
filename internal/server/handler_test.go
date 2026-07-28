@@ -215,9 +215,9 @@ func TestModelsDynamic(t *testing.T) {
 	dynamicModelsCache.fetched = time.Time{}
 	dynamicModelsCache.Unlock()
 
-	// 假上游返回动态模型
+	// 假上游返回动态模型（含 agents + contextWindow）
 	up := newFakeUpstream(t, func(authz string) (int, string, bool) {
-		return 200, `{"code":0,"data":{"models":[{"id":"dyn-model-a"},{"id":"dyn-model-b"},{"id":"glm-9.9"}]}}`, false
+		return 200, `{"code":0,"data":{"models":[{"id":"dyn-model-a","contextWindow":65536},{"id":"dyn-model-b","contextWindow":131072},{"id":"glm-9.9","contextWindow":262144}],"agents":[{"name":"cli","models":["dyn-model-a","dyn-model-b","glm-9.9"]}]}}`, false
 	})
 	p := testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at1", ExpiresAt: 9999999999})
 	h := NewHandler(Config{Pool: p, Upstream: up})

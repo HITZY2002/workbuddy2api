@@ -243,10 +243,18 @@ func (c *Client) ChatStream(a *auth.Auth, body []byte) (rc io.ReadCloser, status
 	return resp.Body, resp.StatusCode, nil
 }
 
+// ModelInfo 动态模型信息（含 contextWindow/maxTokens）。
+type ModelInfo struct {
+	ID            string
+	Name          string
+	ContextWindow int64
+	MaxTokens     int64
+}
+
 // FetchModels 调上游动态模型接口（api-reference §5）。
 // CN: GET {chatBase}/console/enterprises/personal/models，Bearer accessToken。
-// 返回客户端可用的模型 ID 列表；失败返回错误（调用方回退静态表）。
-func (c *Client) FetchModels(a *auth.Auth) ([]string, error) {
+// 返回 cli agent 可用模型的完整信息（含 contextWindow/maxTokens）。
+func (c *Client) FetchModels(a *auth.Auth) ([]ModelInfo, error) {
 	url := c.chatBase(a) + "/console/enterprises/personal/models"
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -271,9 +279,16 @@ func (c *Client) FetchModels(a *auth.Auth) ([]string, error) {
 		Code int `json:"code"`
 		Data struct {
 			Models []struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
+				ID            string          `json:"id"`
+				Name          string          `json:"name"`
+				ContextWindow json.RawMessage `json:"contextWindow"`
+				MaxTokens     json.RawMessage `json:"maxTokens"`
+				Disabled      bool            `json:"disabled"`
 			} `json:"models"`
+			Agents []struct {
+				Name   string   `json:"name"`
+				Models []string `json:"models"`
+			} `json:"agents"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
@@ -282,16 +297,59 @@ func (c *Client) FetchModels(a *auth.Auth) ([]string, error) {
 	if env.Code != 0 {
 		return nil, fmt.Errorf("models api code=%d", env.Code)
 	}
-	ids := make([]string, 0, len(env.Data.Models))
-	for _, m := range env.Data.Models {
-		if m.ID != "" {
-			ids = append(ids, m.ID)
+	// 取 cli agent 的模型列表
+	var cliIDs []string
+	for _, ag := range env.Data.Agents {
+		if ag.Name == "cli" {
+			cliIDs = ag.Models
+			break
 		}
 	}
-	if len(ids) == 0 {
+	if len(cliIDs) == 0 {
+		return nil, fmt.Errorf("no cli agent models found")
+	}
+	// 建索引
+	dynMap := make(map[string]struct {
+		ID            string
+		Name          string
+		ContextWindow json.RawMessage
+		MaxTokens     json.RawMessage
+		Disabled      bool
+	}, len(env.Data.Models))
+	for _, m := range env.Data.Models {
+		dynMap[m.ID] = struct {
+			ID            string
+			Name          string
+			ContextWindow json.RawMessage
+			MaxTokens     json.RawMessage
+			Disabled      bool
+		}{m.ID, m.Name, m.ContextWindow, m.MaxTokens, m.Disabled}
+	}
+	out := make([]ModelInfo, 0, len(cliIDs))
+	for _, id := range cliIDs {
+		m, ok := dynMap[id]
+		if !ok || m.Disabled {
+			continue
+		}
+		mi := ModelInfo{ID: m.ID, Name: m.Name}
+		if len(m.ContextWindow) > 0 {
+			var v float64
+			if json.Unmarshal(m.ContextWindow, &v) == nil {
+				mi.ContextWindow = int64(v)
+			}
+		}
+		if len(m.MaxTokens) > 0 {
+			var v float64
+			if json.Unmarshal(m.MaxTokens, &v) == nil {
+				mi.MaxTokens = int64(v)
+			}
+		}
+		out = append(out, mi)
+	}
+	if len(out) == 0 {
 		return nil, fmt.Errorf("models api returned empty list")
 	}
-	return ids, nil
+	return out, nil
 }
 
 // UserResource 查询账号当前可花费积分余额（所有套餐 CycleCapacity 聚合，负值钳 0）。

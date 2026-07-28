@@ -106,7 +106,7 @@ var staticModels = []map[string]any{
 // dynamicModelsCache 动态模型缓存。
 var dynamicModelsCache struct {
 	sync.RWMutex
-	ids     []string
+	ids     []upstream.ModelInfo
 	fetched time.Time
 }
 
@@ -120,18 +120,22 @@ func (h *Handler) models(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// modelList 动态获取模型 ID 列表并包装成 OpenAI 格式。
+// modelList 动态获取模型列表并包装成 OpenAI 格式（含 context_length）。
 func (h *Handler) modelList() []map[string]any {
-	if ids := h.fetchDynamicModels(); len(ids) > 0 {
-		out := make([]map[string]any, 0, len(ids))
-		for _, id := range ids {
-			out = append(out, map[string]any{
-				"id":             id,
+	if infos := h.fetchDynamicModels(); len(infos) > 0 {
+		out := make([]map[string]any, 0, len(infos))
+		for _, mi := range infos {
+			entry := map[string]any{
+				"id":             mi.ID,
 				"object":         "model",
 				"created":        1753600000,
 				"owned_by":       "workbuddy",
-				"context_length": 131072,
-			})
+				"context_length": mi.ContextWindow,
+			}
+			if mi.ContextWindow == 0 {
+				entry["context_length"] = 131072 // 兜底
+			}
+			out = append(out, entry)
 		}
 		return out
 	}
@@ -139,29 +143,29 @@ func (h *Handler) modelList() []map[string]any {
 }
 
 // fetchDynamicModels 从池中任一健康账号拉模型列表，缓存 1h。
-func (h *Handler) fetchDynamicModels() []string {
+// fetchDynamicModels 从池中任一健康账号拉模型列表（含 contextWindow/maxTokens），缓存 1h。
+func (h *Handler) fetchDynamicModels() []upstream.ModelInfo {
 	dynamicModelsCache.RLock()
 	if len(dynamicModelsCache.ids) > 0 && time.Since(dynamicModelsCache.fetched) < dynamicModelsTTL {
-		ids := dynamicModelsCache.ids
+		out := dynamicModelsCache.ids
 		dynamicModelsCache.RUnlock()
-		return ids
+		return out
 	}
 	dynamicModelsCache.RUnlock()
 
-	// 缓存过期：挑一个健康账号拉
 	acct := h.cfg.Pool.Pick()
 	if acct == nil {
 		return nil
 	}
-	ids, err := h.cfg.Upstream.FetchModels(acct)
-	if err != nil || len(ids) == 0 {
+	infos, err := h.cfg.Upstream.FetchModels(acct)
+	if err != nil || len(infos) == 0 {
 		return nil
 	}
 	dynamicModelsCache.Lock()
-	dynamicModelsCache.ids = ids
+	dynamicModelsCache.ids = infos
 	dynamicModelsCache.fetched = time.Now()
 	dynamicModelsCache.Unlock()
-	return ids
+	return infos
 }
 
 func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
