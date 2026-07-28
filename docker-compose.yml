@@ -1,0 +1,11 @@
+services:
+  wb2api:
+    build: .
+    container_name: workbuddy2api
+    restart: unless-stopped
+    ports:
+      - "7863:7863"
+    volumes:
+      - ./auths:/app/auths
+      - ./data:/app/data
+      - ./config.json:/app/config.json:ro
