@@ -91,16 +91,16 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 
 // 静态 CN 模型表（api-reference §5，动态接口失败时的回退）。
 var staticModels = []map[string]any{
-	{"id": "glm-5.2", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "glm-5.1", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "glm-5v-turbo", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "kimi-k2.7", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "minimax-m3", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "hy3", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "hy3-preview", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "hy3-preview-agent", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "deepseek-v4-pro", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
-	{"id": "deepseek-v4-flash", "object": "model", "created": 1753600000, "owned_by": "workbuddy"},
+	{"id": "glm-5.2", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "glm-5.1", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "glm-5v-turbo", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "kimi-k2.7", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "minimax-m3", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "hy3", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "hy3-preview", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "hy3-preview-agent", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "deepseek-v4-pro", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
+	{"id": "deepseek-v4-flash", "object": "model", "created": 1753600000, "owned_by": "workbuddy", "context_length": 131072},
 }
 
 // dynamicModelsCache 动态模型缓存。
@@ -126,10 +126,11 @@ func (h *Handler) modelList() []map[string]any {
 		out := make([]map[string]any, 0, len(ids))
 		for _, id := range ids {
 			out = append(out, map[string]any{
-				"id":       id,
-				"object":   "model",
-				"created":  1753600000,
-				"owned_by": "workbuddy",
+				"id":             id,
+				"object":         "model",
+				"created":        1753600000,
+				"owned_by":       "workbuddy",
+				"context_length": 131072,
 			})
 		}
 		return out
