@@ -243,17 +243,16 @@ func (c *Client) ChatStream(a *auth.Auth, body []byte) (rc io.ReadCloser, status
 	return resp.Body, resp.StatusCode, nil
 }
 
-// ModelInfo 动态模型信息（含 contextWindow/maxTokens）。
+// ModelInfo 动态模型信息（含 maxInputTokens/maxOutputTokens）。
 type ModelInfo struct {
 	ID            string
 	Name          string
-	ContextWindow int64
-	MaxTokens     int64
+	ContextWindow int64 // = maxInputTokens
+	MaxTokens     int64 // = maxOutputTokens
 }
 
-// FetchModels 调上游动态模型接口（api-reference §5）。
-// CN: GET {chatBase}/console/enterprises/personal/models，Bearer accessToken。
-// 返回 cli agent 可用模型的完整信息（含 contextWindow/maxTokens）。
+// FetchModels 调上游动态模型接口。
+// 字段名与上游实际返回对齐：maxInputTokens（非 contextWindow）、maxOutputTokens（非 maxTokens）。
 func (c *Client) FetchModels(a *auth.Auth) ([]ModelInfo, error) {
 	url := c.chatBase(a) + "/console/enterprises/personal/models"
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -279,11 +278,11 @@ func (c *Client) FetchModels(a *auth.Auth) ([]ModelInfo, error) {
 		Code int `json:"code"`
 		Data struct {
 			Models []struct {
-				ID            string          `json:"id"`
-				Name          string          `json:"name"`
-				ContextWindow json.RawMessage `json:"contextWindow"`
-				MaxTokens     json.RawMessage `json:"maxTokens"`
-				Disabled      bool            `json:"disabled"`
+				ID              string `json:"id"`
+				Name            string `json:"name"`
+				MaxInputTokens  int64  `json:"maxInputTokens"`
+				MaxOutputTokens int64  `json:"maxOutputTokens"`
+				Disabled        bool   `json:"disabled"`
 			} `json:"models"`
 			Agents []struct {
 				Name   string   `json:"name"`
@@ -297,7 +296,6 @@ func (c *Client) FetchModels(a *auth.Auth) ([]ModelInfo, error) {
 	if env.Code != 0 {
 		return nil, fmt.Errorf("models api code=%d", env.Code)
 	}
-	// 取 cli agent 的模型列表
 	var cliIDs []string
 	for _, ag := range env.Data.Agents {
 		if ag.Name == "cli" {
@@ -308,22 +306,21 @@ func (c *Client) FetchModels(a *auth.Auth) ([]ModelInfo, error) {
 	if len(cliIDs) == 0 {
 		return nil, fmt.Errorf("no cli agent models found")
 	}
-	// 建索引
 	dynMap := make(map[string]struct {
-		ID            string
-		Name          string
-		ContextWindow json.RawMessage
-		MaxTokens     json.RawMessage
-		Disabled      bool
+		ID              string
+		Name            string
+		MaxInputTokens  int64
+		MaxOutputTokens int64
+		Disabled        bool
 	}, len(env.Data.Models))
 	for _, m := range env.Data.Models {
 		dynMap[m.ID] = struct {
-			ID            string
-			Name          string
-			ContextWindow json.RawMessage
-			MaxTokens     json.RawMessage
-			Disabled      bool
-		}{m.ID, m.Name, m.ContextWindow, m.MaxTokens, m.Disabled}
+			ID              string
+			Name            string
+			MaxInputTokens  int64
+			MaxOutputTokens int64
+			Disabled        bool
+		}{m.ID, m.Name, m.MaxInputTokens, m.MaxOutputTokens, m.Disabled}
 	}
 	out := make([]ModelInfo, 0, len(cliIDs))
 	for _, id := range cliIDs {
@@ -331,20 +328,12 @@ func (c *Client) FetchModels(a *auth.Auth) ([]ModelInfo, error) {
 		if !ok || m.Disabled {
 			continue
 		}
-		mi := ModelInfo{ID: m.ID, Name: m.Name}
-		if len(m.ContextWindow) > 0 {
-			var v float64
-			if json.Unmarshal(m.ContextWindow, &v) == nil {
-				mi.ContextWindow = int64(v)
-			}
-		}
-		if len(m.MaxTokens) > 0 {
-			var v float64
-			if json.Unmarshal(m.MaxTokens, &v) == nil {
-				mi.MaxTokens = int64(v)
-			}
-		}
-		out = append(out, mi)
+		out = append(out, ModelInfo{
+			ID:            m.ID,
+			Name:          m.Name,
+			ContextWindow: m.MaxInputTokens,
+			MaxTokens:     m.MaxOutputTokens,
+		})
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("models api returned empty list")
