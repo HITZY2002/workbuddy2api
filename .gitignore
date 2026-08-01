@@ -8,6 +8,7 @@ data/
 login
 credit
 wb2api
+signin_bin
 
 # Config with secrets (use config.example.json)
 config.json
