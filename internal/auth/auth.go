@@ -8,11 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Auth 是归一化后的账号凭证（来源可以是插件 OAuth 嵌套形或 CPA 面板扁平形）。
 type Auth struct {
+	// mu 串行化 RefreshToken 写与 SaveAtomic 读，防止并发写回半更新 token。
+	mu sync.Mutex
+
 	AccessToken  string
 	RefreshToken string
 	ExpiresAt    int64 // Unix 秒
@@ -22,6 +26,12 @@ type Auth struct {
 	Nickname     string
 	FilePath     string // 来源文件；refresh 后原子写回此处
 }
+
+// Lock 供同进程内其他包（upstream.RefreshToken）在改写 Auth 字段期间加锁。
+func (a *Auth) Lock() { a.mu.Lock() }
+
+// Unlock 释放 a.Lock 获取的锁。
+func (a *Auth) Unlock() { a.mu.Unlock() }
 
 // Region 返回 "cn" 或 "global"。domain 为空视为 CN（向后兼容）。
 func (a *Auth) Region() string {
@@ -109,7 +119,16 @@ func Parse(raw []byte) (*Auth, error) {
 }
 
 // SaveAtomic 以嵌套形原子写回 FilePath（tmp + rename），保持 CPA 插件可读格式。
+// 加锁外壳：防止与 RefreshToken 并发读写 token 字段导致写回半更新。
 func (a *Auth) SaveAtomic() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.saveAtomicLocked()
+}
+
+// saveAtomicLocked 是 SaveAtomic 的持锁内部版本；调用方必须已持有 a.mu。
+// 供持锁路径（如 RefreshToken 后写回）使用，避免重复加锁。
+func (a *Auth) saveAtomicLocked() error {
 	if a.FilePath == "" {
 		return fmt.Errorf("no FilePath set")
 	}

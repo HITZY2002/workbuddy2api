@@ -178,8 +178,10 @@ func (c *Client) doJSON(req *http.Request) (json.RawMessage, error) {
 }
 
 // RefreshToken 刷新 access token；成功时更新 a 的字段（缺省值保留旧值），
-// 调用方负责 SaveAtomic。
+// 调用方负责 SaveAtomic。全程持 a 锁，防止并发 SaveAtomic 读半更新 token。
 func (c *Client) RefreshToken(a *auth.Auth) error {
+	a.Lock()
+	defer a.Unlock()
 	if strings.TrimSpace(a.RefreshToken) == "" {
 		return fmt.Errorf("no refreshToken")
 	}
