@@ -126,11 +126,12 @@ func (h *Handler) modelList() []map[string]any {
 		out := make([]map[string]any, 0, len(infos))
 		for _, mi := range infos {
 			entry := map[string]any{
-				"id":             mi.ID,
-				"object":         "model",
-				"created":        1753600000,
-				"owned_by":       "workbuddy",
-				"context_length": mi.ContextWindow,
+				"id":                mi.ID,
+				"object":            "model",
+				"created":           1753600000,
+				"owned_by":          "workbuddy",
+				"context_length":    mi.ContextWindow,
+				"max_output_tokens": mi.MaxTokens,
 			}
 			if mi.ContextWindow == 0 {
 				entry["context_length"] = 131072 // 兜底
