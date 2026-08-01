@@ -355,3 +355,31 @@ func TestHealthz(t *testing.T) {
 		t.Errorf("code=%d", rec.Code)
 	}
 }
+
+func TestStatusRequiresAuth(t *testing.T) {
+	p := testPoolWith(&auth.Auth{UID: "u1", Nickname: "nick", AccessToken: "at", ExpiresAt: 9999999999})
+	h := NewHandler(Config{Pool: p, Upstream: upstream.New(), APIKey: "secret"})
+
+	// 无 token → 401
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/status", nil))
+	if rec.Code != 401 {
+		t.Errorf("no token: code=%d", rec.Code)
+	}
+
+	// 带 token → 200
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/status", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Errorf("with token: code=%d", rec.Code)
+	}
+
+	// /healthz 无鉴权仍 200
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+	if rec.Code != 200 {
+		t.Errorf("healthz: code=%d", rec.Code)
+	}
+}
