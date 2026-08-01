@@ -107,10 +107,14 @@ var staticModels = []map[string]any{
 var dynamicModelsCache struct {
 	sync.RWMutex
 	ids     []upstream.ModelInfo
-	fetched time.Time
+	fetched time.Time // 最近一次成功拉取时间
+	lastFail time.Time // 最近一次拉取失败时间（负缓存）
 }
 
-const dynamicModelsTTL = time.Hour
+const (
+	dynamicModelsTTL        = time.Hour
+	modelsFetchFailCooldown = 5 * time.Minute
+)
 
 // models 返回模型列表：优先动态（缓存 1h），失败回退静态表。
 func (h *Handler) models(w http.ResponseWriter, r *http.Request) {
@@ -145,12 +149,18 @@ func (h *Handler) modelList() []map[string]any {
 
 // fetchDynamicModels 从池中任一健康账号拉模型列表，缓存 1h。
 // fetchDynamicModels 从池中任一健康账号拉模型列表（含 contextWindow/maxTokens），缓存 1h。
+// 拉取失败记录时间戳进入 5min 负缓存，冷却期内直接用静态表，避免反复打上游。
 func (h *Handler) fetchDynamicModels() []upstream.ModelInfo {
 	dynamicModelsCache.RLock()
 	if len(dynamicModelsCache.ids) > 0 && time.Since(dynamicModelsCache.fetched) < dynamicModelsTTL {
 		out := dynamicModelsCache.ids
 		dynamicModelsCache.RUnlock()
 		return out
+	}
+	// 失败负缓存：冷却期内不再请求上游。
+	if !dynamicModelsCache.lastFail.IsZero() && time.Since(dynamicModelsCache.lastFail) < modelsFetchFailCooldown {
+		dynamicModelsCache.RUnlock()
+		return nil
 	}
 	dynamicModelsCache.RUnlock()
 
@@ -160,11 +170,15 @@ func (h *Handler) fetchDynamicModels() []upstream.ModelInfo {
 	}
 	infos, err := h.cfg.Upstream.FetchModels(acct)
 	if err != nil || len(infos) == 0 {
+		dynamicModelsCache.Lock()
+		dynamicModelsCache.lastFail = time.Now()
+		dynamicModelsCache.Unlock()
 		return nil
 	}
 	dynamicModelsCache.Lock()
 	dynamicModelsCache.ids = infos
 	dynamicModelsCache.fetched = time.Now()
+	dynamicModelsCache.lastFail = time.Time{} // 成功则清空负缓存
 	dynamicModelsCache.Unlock()
 	return infos
 }

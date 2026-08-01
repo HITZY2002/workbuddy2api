@@ -213,6 +213,7 @@ func TestModelsDynamic(t *testing.T) {
 	dynamicModelsCache.Lock()
 	dynamicModelsCache.ids = nil
 	dynamicModelsCache.fetched = time.Time{}
+	dynamicModelsCache.lastFail = time.Time{}
 	dynamicModelsCache.Unlock()
 
 	// 假上游返回动态模型（含 agents + maxInputTokens/maxOutputTokens）
@@ -275,6 +276,7 @@ func TestModelsDynamicFallsBackToStatic(t *testing.T) {
 	dynamicModelsCache.Lock()
 	dynamicModelsCache.ids = nil
 	dynamicModelsCache.fetched = time.Time{}
+	dynamicModelsCache.lastFail = time.Time{}
 	dynamicModelsCache.Unlock()
 
 	// 假上游 500
@@ -294,6 +296,49 @@ func TestModelsDynamicFallsBackToStatic(t *testing.T) {
 	// 回退静态表（≥5 个）
 	if len(data) < 5 {
 		t.Errorf("static fallback failed: %d", len(data))
+	}
+}
+
+func TestModelsNegativeCacheOnFetchFailure(t *testing.T) {
+	// 清缓存
+	dynamicModelsCache.Lock()
+	dynamicModelsCache.ids = nil
+	dynamicModelsCache.fetched = time.Time{}
+	dynamicModelsCache.lastFail = time.Time{}
+	dynamicModelsCache.Unlock()
+
+	var calls int
+	up := newFakeUpstream(t, func(authz string) (int, string, bool) {
+		calls++
+		return 500, `boom`, false
+	})
+	p := testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at1", ExpiresAt: 9999999999})
+	h := NewHandler(Config{Pool: p, Upstream: up})
+
+	// 连续 3 次请求，上游持续 500 → 只应触发 1 次 fetch（负缓存生效），
+	// 其余走静态 fallback（仍返回 200）。
+	for i := 0; i < 3; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/models", nil))
+		if rec.Code != 200 {
+			t.Fatalf("req %d: code=%d body=%s", i, rec.Code, rec.Body)
+		}
+	}
+	if calls != 1 {
+		t.Errorf("want 1 fetch, got %d", calls)
+	}
+
+	// 冷却期结束（把失败时间戳拨回 10 分钟前）→ 应重新 fetch。
+	dynamicModelsCache.Lock()
+	dynamicModelsCache.lastFail = time.Now().Add(-10 * time.Minute)
+	dynamicModelsCache.Unlock()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/models", nil))
+	if rec.Code != 200 {
+		t.Fatalf("after cooldown: code=%d", rec.Code)
+	}
+	if calls != 2 {
+		t.Errorf("want 2 fetch after cooldown, got %d", calls)
 	}
 }
 
