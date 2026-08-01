@@ -292,21 +292,3 @@ func writeOpenAIError(w http.ResponseWriter, status int, code, msg string) {
 		},
 	})
 }
-
-// writeRawAsOpenAIError 上游返回非 2xx 时尽量提取 msg，否则原样包裹。
-func writeRawAsOpenAIError(w http.ResponseWriter, status int, raw []byte) {
-	msg := strings.TrimSpace(string(raw))
-	var env struct {
-		Msg string `json:"msg"`
-	}
-	if json.Unmarshal(raw, &env) == nil && env.Msg != "" {
-		msg = env.Msg
-	}
-	if len(msg) > 400 {
-		msg = msg[:400]
-	}
-	if msg == "" {
-		msg = http.StatusText(status)
-	}
-	writeOpenAIError(w, status, "upstream_error", msg)
-}
