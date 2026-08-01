@@ -134,9 +134,12 @@ func TestChatStreamSendsHeadersAndStreamTrue(t *testing.T) {
 		}, nil
 	})
 	a := &auth.Auth{AccessToken: "at", UID: "u1", EnterpriseID: "e1"}
-	rc, status, err := c.ChatStream(a, []byte(`{"model":"glm-5.2","messages":[]}`))
+	rc, status, respBody, err := c.ChatStream(a, []byte(`{"model":"glm-5.2","messages":[]}`))
 	if err != nil || status != 200 {
 		t.Fatalf("chat: status=%d err=%v", status, err)
+	}
+	if respBody != nil {
+		t.Errorf("200 response should carry nil body, got %q", respBody)
 	}
 	rc.Close()
 	if gotAuth != "Bearer at" || gotUID != "u1" || gotProduct != "SaaS" {
@@ -152,16 +155,16 @@ func TestChatStreamHardCreditError(t *testing.T) {
 		return jsonResp(402, `{"code":1,"msg":"余额不足"}`), nil
 	})
 	a := &auth.Auth{AccessToken: "at", UID: "u1"}
-	_, status, err := c.ChatStream(a, []byte(`{}`))
+	_, status, respBody, err := c.ChatStream(a, []byte(`{}`))
 	if status != 402 {
 		t.Errorf("status=%d", status)
 	}
 	if err != nil {
 		t.Fatalf("hard credit should return body via status, not err: %v", err)
 	}
-	// caller re-reads via LastBody
-	if Classify(status, string(c.LastBody)) != ErrHardCredit {
-		t.Errorf("body=%q not classified hard credit", c.LastBody)
+	// caller classifies via returned body
+	if Classify(status, string(respBody)) != ErrHardCredit {
+		t.Errorf("body=%q not classified hard credit", respBody)
 	}
 }
 
