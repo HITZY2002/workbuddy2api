@@ -215,9 +215,9 @@ func TestModelsDynamic(t *testing.T) {
 	dynamicModelsCache.fetched = time.Time{}
 	dynamicModelsCache.Unlock()
 
-	// 假上游返回动态模型（含 agents + contextWindow）
+	// 假上游返回动态模型（含 agents + maxInputTokens/maxOutputTokens）
 	up := newFakeUpstream(t, func(authz string) (int, string, bool) {
-		return 200, `{"code":0,"data":{"models":[{"id":"dyn-model-a","contextWindow":65536},{"id":"dyn-model-b","contextWindow":131072},{"id":"glm-9.9","contextWindow":262144}],"agents":[{"name":"cli","models":["dyn-model-a","dyn-model-b","glm-9.9"]}]}}`, false
+		return 200, `{"code":0,"data":{"models":[{"id":"dyn-model-a","maxInputTokens":65536,"maxOutputTokens":8192},{"id":"dyn-model-b","maxInputTokens":131072,"maxOutputTokens":16384},{"id":"glm-9.9","maxInputTokens":262144,"maxOutputTokens":32768}],"agents":[{"name":"cli","models":["dyn-model-a","dyn-model-b","glm-9.9"]}]}}`, false
 	})
 	p := testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at1", ExpiresAt: 9999999999})
 	h := NewHandler(Config{Pool: p, Upstream: up})
@@ -238,6 +238,27 @@ func TestModelsDynamic(t *testing.T) {
 	}
 	if !ids["dyn-model-a"] || !ids["glm-9.9"] {
 		t.Errorf("dynamic ids missing: %v", ids)
+	}
+
+	// 断言字段映射：maxInputTokens → context_length，maxOutputTokens → max_output_tokens
+	for _, m := range data {
+		mm := m.(map[string]any)
+		switch mm["id"] {
+		case "dyn-model-a":
+			if mm["context_length"].(float64) != 65536 {
+				t.Errorf("dyn-model-a context_length=%v want 65536", mm["context_length"])
+			}
+			if mm["max_output_tokens"].(float64) != 8192 {
+				t.Errorf("dyn-model-a max_output_tokens=%v want 8192", mm["max_output_tokens"])
+			}
+		case "glm-9.9":
+			if mm["context_length"].(float64) != 262144 {
+				t.Errorf("glm-9.9 context_length=%v want 262144", mm["context_length"])
+			}
+			if mm["max_output_tokens"].(float64) != 32768 {
+				t.Errorf("glm-9.9 max_output_tokens=%v want 32768", mm["max_output_tokens"])
+			}
+		}
 	}
 
 	// 第二次调用走缓存（把上游关掉也成功）
