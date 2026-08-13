@@ -11,26 +11,33 @@ import (
 	"time"
 
 	"workbuddy2api/internal/pool"
+	"workbuddy2api/internal/scheduler"
 	"workbuddy2api/internal/upstream"
 )
 
 // Config handler 依赖。
 type Config struct {
-	Pool         *pool.Pool
-	Upstream     *upstream.Client
-	APIKey       string        // 空 = 不鉴权
-	MaxRotate    int           // 单请求最多换号次数，默认 3
-	HardCooldown time.Duration // 余额不足冷却，默认 12h
-	SoftCooldown time.Duration // 429 冷却，默认 60s
-	ErrThreshold int           // 连续其他错误冷却阈值，默认 3
-	ErrCooldown  time.Duration // 错误冷却时长，默认 10m
-	RefreshSkew  time.Duration // token 提前刷新窗口，默认 10m
+	Pool           *pool.Pool
+	Upstream       *upstream.Client
+	Scheduler      *scheduler.Scheduler
+	APIKey         string        // 空 = 不鉴权
+	AuthDir        string        // 面板重载 auths
+	Region         string        // cn/global
+	CheckinHours   []int
+	KeepaliveHours []int
+	MaxRotate      int           // 单请求最多换号次数，默认 3
+	HardCooldown   time.Duration // 余额不足冷却，默认 12h
+	SoftCooldown   time.Duration // 429 冷却，默认 60s
+	ErrThreshold   int           // 连续其他错误冷却阈值，默认 3
+	ErrCooldown    time.Duration // 错误冷却时长，默认 10m
+	RefreshSkew    time.Duration // token 提前刷新窗口，默认 10m
 }
 
 // Handler 主路由。
 type Handler struct {
-	cfg Config
-	mux *http.ServeMux
+	cfg   Config
+	mux   *http.ServeMux
+	oauth *oauthStore
 }
 
 // NewHandler 构建 handler。
@@ -53,11 +60,30 @@ func NewHandler(cfg Config) *Handler {
 	if cfg.RefreshSkew <= 0 {
 		cfg.RefreshSkew = 10 * time.Minute
 	}
-	h := &Handler{cfg: cfg, mux: http.NewServeMux()}
+	if cfg.Region == "" {
+		cfg.Region = "cn"
+	}
+	h := &Handler{cfg: cfg, mux: http.NewServeMux(), oauth: newOAuthStore()}
+	// WebUI
+	h.mux.HandleFunc("GET /{$}", h.servePanel)
+	h.mux.HandleFunc("GET /panel", h.servePanel)
+	h.mux.HandleFunc("GET /panel/", h.servePanel)
+	// OpenAI API
 	h.mux.HandleFunc("POST /v1/chat/completions", h.withAuth(h.chatCompletions))
 	h.mux.HandleFunc("GET /v1/models", h.withAuth(h.models))
 	h.mux.HandleFunc("GET /status", h.withAuth(h.status))
 	h.mux.HandleFunc("GET /healthz", h.healthz)
+	// Admin API (面板)
+	h.mux.HandleFunc("GET /admin/api/overview", h.withAuth(h.adminOverview))
+	h.mux.HandleFunc("POST /admin/api/credits", h.withAuth(h.adminCredits))
+	h.mux.HandleFunc("POST /admin/api/checkin", h.withAuth(h.adminCheckin))
+	h.mux.HandleFunc("POST /admin/api/keepalive", h.withAuth(h.adminKeepalive))
+	h.mux.HandleFunc("POST /admin/api/reload", h.withAuth(h.adminReload))
+	h.mux.HandleFunc("POST /admin/api/accounts/enable", h.withAuth(h.adminEnable))
+	h.mux.HandleFunc("POST /admin/api/accounts/disable", h.withAuth(h.adminDisable))
+	h.mux.HandleFunc("POST /admin/api/accounts/clear-cooldown", h.withAuth(h.adminClearCooldown))
+	h.mux.HandleFunc("POST /admin/api/oauth/start", h.withAuth(h.adminOAuthStart))
+	h.mux.HandleFunc("POST /admin/api/oauth/poll", h.withAuth(h.adminOAuthPoll))
 	return h
 }
 
