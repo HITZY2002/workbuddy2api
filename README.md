@@ -87,6 +87,15 @@ curl -s http://localhost:7863/v1/chat/completions \
 - **连接池**：`MaxIdleConnsPerHost=20` 减少 TLS 握手
 - **凭证续期**：token 临近过期自动 refresh，失败禁用账号
 
+## Fork 说明
+
+本项目 fork 自 [Sliverkiss/workbuddy2api](https://github.com/Sliverkiss/workbuddy2api)，与上游保持同步。二开新增内容：
+
+- **WebUI 控制台 + 管理 API + OAuth 登录工具**（`feat(panel)`）
+- **设计系统升级**：IBM Plex Sans / JetBrains Mono 字体、代码深色配色、密度化仪表盘、focus-visible / reduced-motion 无障碍
+- **浅色玻璃拟态 + 黏土风格主题**
+- 忽略 `.api_key` 本地凭证文件
+
 ## 免责声明
 
 本项目仅供学习和研究使用。使用者需遵守 WorkBuddy / CodeBuddy 的服务条款，自行承担使用风险。作者不对任何因使用本项目产生的直接或间接损失负责。
