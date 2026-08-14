@@ -19,7 +19,7 @@ func (h *Handler) servePanel(w http.ResponseWriter, r *http.Request) {
 	html = strings.ReplaceAll(html, "__SERVICE_NAME__", "workbuddy2api")
 	html = strings.ReplaceAll(html, "__SERVICE_TITLE__", "WorkBuddy2API")
 	html = strings.ReplaceAll(html, "__LOGO__", "WB")
-	html = strings.ReplaceAll(html, "__ACCENT__", "#34d399")
+	html = strings.ReplaceAll(html, "__ACCENT__", "#0d9488")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
